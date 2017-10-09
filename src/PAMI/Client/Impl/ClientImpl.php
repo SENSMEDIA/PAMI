@@ -99,6 +99,11 @@ class ClientImpl implements IClient
     private $scheme;
 
     /**
+     * @var bool
+     */
+    private $blocking = false;
+
+    /**
      * Event factory.
      * @var EventFactoryImpl
      */
@@ -190,7 +195,7 @@ class ClientImpl implements IClient
                 'Could not connect: ' . $response->getMessage()
             );
         }
-        @stream_set_blocking($this->socket, 0);
+        @stream_set_blocking($this->socket, $this->blocking);
         $this->currentProcessingMessage = '';
         $this->logger->debug('Logged in successfully to ami.');
     }
@@ -238,7 +243,7 @@ class ClientImpl implements IClient
         $msgs = array();
         // Read something.
         $read = @fread($this->socket, 65535);
-        if ($read === false || @feof($this->socket)) {
+        if ($read === false || (empty($read) && @feof($this->socket))) {
             throw new ClientException('Error reading');
         }
         $this->currentProcessingMessage .= $read;
@@ -455,7 +460,19 @@ class ClientImpl implements IClient
      */
     public function __construct(array $options)
     {
-        $this->logger = new NullLogger;
+        if (!isset($options['event_factory'])) {
+            $options['event_factory'] = new EventFactoryImpl();
+        }
+
+        if (!isset($options['logger'])) {
+            $options['logger'] = new NullLogger();
+        }
+
+        if (isset($options['blocking'])) {
+            $this->blocking = $options['blocking'];
+        }
+
+        $this->logger = $options['logger'];
         $this->host = $options['host'];
         $this->port = (int) $options['port'];
         $this->user = $options['username'];
@@ -465,7 +482,8 @@ class ClientImpl implements IClient
         $this->scheme = isset($options['scheme']) ? $options['scheme'] : 'tcp://';
         $this->eventMask = isset($options['event_mask']) ? $options['event_mask'] : null;
         $this->eventListeners = array();
-        $this->eventFactory = new EventFactoryImpl();
+        $this->eventFactory = $options['event_factory'];
+
         $this->incomingQueue = array();
         $this->lastActionId = false;
     }
